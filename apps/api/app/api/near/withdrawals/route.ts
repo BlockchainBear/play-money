@@ -17,6 +17,7 @@ const withdrawalRequestSchema = z.object({
       return false;
     }
   }, { message: 'Amount must be a positive number string.' }),
+  assetPlatformId: z.string().min(1), // e.g., "PRIMARY" or "USDC"
 });
 
 export async function POST(req: Request) {
@@ -33,12 +34,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid input', details: validation.error.flatten() }, { status: 400 });
     }
 
-    const { targetNearAccountId, amount } = validation.data;
+    const { targetNearAccountId, amount, assetPlatformId } = validation.data; // Get new field
     const amountDecimal = new Decimal(amount);
 
     const result = await requestNearWithdrawal({
       userId: user.id,
       targetNearAccountId,
+      assetPlatformId, // Pass it here
       amountPlatformCurrency: amountDecimal,
     });
 

@@ -483,14 +483,22 @@ model NearDeposit {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   nearTransactionHash String   @unique // The hash of the Near transaction
-  nearAccountId       String   // The sender's Near account ID
-  amountYoctoNear     String   // Amount deposited, in yoctoNEAR
+  nearAccountId       String   // The sender's Near account ID (for native NEAR) or token sender ID
+
+  assetPlatformId     String   // Platform's internal asset ID (e.g., "PRIMARY", "USDC")
+  amountRawUnits      String   // Amount deposited, in the asset's smallest unit (e.g., yoctoNEAR, or USDC raw units)
+  assetDecimals       Int      // Decimal precision of the asset (e.g., 24 for NEAR, 6 for USDC)
+  memo                String?  // New field for ft_transfer_call memo
+
   platformUserId      String   // ID of the platform user credited
   platformUser        User     @relation(fields: [platformUserId], references: [id])
   processedAt         DateTime @default(now())
+  // needsManualReview Boolean? // Optional: if we want to flag issues
+  // reviewReason      String?  // Optional
 
   @@index([platformUserId])
   @@index([nearAccountId])
+  @@index([assetPlatformId]) // New index
 }
 
 model BlockchainSyncState {
@@ -519,7 +527,10 @@ model NearWithdrawal {
   platformTransaction      Transaction @relation(fields: [platformTransactionId], references: [id])
 
   targetNearAccountId      String    // User's personal Near account to send funds to
-  amountYoctoNear          String    // Amount to send, in yoctoNEAR (derived from platform currency amount)
+
+  assetPlatformId          String   // Platform's internal asset ID (e.g., "PRIMARY", "USDC")
+  amountRawUnits           String   // Amount to send, in the asset's smallest unit
+  assetDecimals            Int      // Decimal precision of the asset
 
   status                   WithdrawalStatus @default(PENDING)
   nearTransactionHash      String?   @unique // Hash of the Near blockchain transaction
@@ -530,4 +541,5 @@ model NearWithdrawal {
 
   @@index([platformUserId])
   @@index([status])
+  @@index([assetPlatformId]) // New index
 }

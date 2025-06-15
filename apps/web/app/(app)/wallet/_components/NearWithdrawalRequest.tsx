@@ -1,12 +1,14 @@
 // apps/web/app/(app)/wallet/_components/NearWithdrawalRequest.tsx
 'use client';
 
-import React, { useState, useEffect, FormEvent } from 'react';
+import React, { useState, useEffect, FormEvent, useCallback } from 'react';
 import { Button } from '@play-money/ui/components/Button';
 import { Input } from '@play-money/ui/components/Input';
 import { Label } from '@play-money/ui/components/Label';
 import Decimal from 'decimal.js';
+import { AssetSelector, AssetOption } from './AssetSelector'; // Adjust path
 
+// fetcher function (as defined before)
 async function fetcher(url: string, options?: RequestInit) {
   const res = await fetch(url, options);
   if (!res.ok) {
@@ -21,34 +23,48 @@ async function fetcher(url: string, options?: RequestInit) {
 // Placeholder: /api/user/balance?currency=PRIMARY
 // If such an endpoint doesn't exist, this part needs adjustment or a mock.
 // For this subtask, I'll mock a balance and add a TODO.
-// TODO: Replace with actual API call to fetch user's PRIMARY balance.
-async function getUserPrimaryBalance(): Promise<Decimal> {
-  // const data = await fetcher('/api/user/balance?assetType=CURRENCY&assetId=PRIMARY');
-  // return new Decimal(data.balance.total || 0);
-  console.warn("Mocking user's PRIMARY balance. Replace with actual API call.");
-  return new Decimal(1000); // Mock balance
-}
+// Placeholder env vars for client-side use
+const PLATFORM_PRIMARY_ASSET_ID = process.env.NEXT_PUBLIC_PLATFORM_PRIMARY_ASSET_ID || 'PRIMARY';
+const PLATFORM_USDC_ASSET_ID = process.env.NEXT_PUBLIC_PLATFORM_USDC_ASSET_ID || 'USDC';
 
+const supportedWithdrawalAssets: AssetOption[] = [
+  { id: PLATFORM_PRIMARY_ASSET_ID, name: 'NEAR' },
+  { id: PLATFORM_USDC_ASSET_ID, name: 'USDC' },
+];
 
 export function NearWithdrawalRequest() {
+  const [selectedAssetId, setSelectedAssetId] = useState<string>(PLATFORM_PRIMARY_ASSET_ID);
   const [targetNearAccountId, setTargetNearAccountId] = useState<string>('');
-  const [amount, setAmount] = useState<string>(''); // Store as string for input field
+  const [amount, setAmount] = useState<string>('');
   const [userBalance, setUserBalance] = useState<Decimal | null>(null);
   const [isLoadingBalance, setIsLoadingBalance] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  useEffect(() => {
+  const fetchUserBalanceForAsset = useCallback(async (assetId: string) => {
     setIsLoadingBalance(true);
-    getUserPrimaryBalance()
-      .then(balance => setUserBalance(balance))
-      .catch(err => {
-        console.error("Failed to fetch user balance:", err);
-        setMessage({ type: 'error', text: 'Failed to load your current balance.' });
-        setUserBalance(new Decimal(0)); // Set to 0 on error to avoid issues
-      })
-      .finally(() => setIsLoadingBalance(false));
+    setMessage(null); // Clear previous messages when asset changes
+    try {
+      const data = await fetcher(`/api/user/platform-balance?assetId=${assetId}&assetType=CURRENCY`);
+      if (data && typeof data.total === 'string') {
+        setUserBalance(new Decimal(data.total));
+      } else {
+        console.error("Invalid balance data received for " + assetId + ":", data);
+        setUserBalance(new Decimal(0));
+        setMessage({ type: 'error', text: 'Failed to parse balance for selected asset.' });
+      }
+    } catch (err: any) {
+      console.error("Failed to fetch user balance for " + assetId + ":", err);
+      setMessage({ type: 'error', text: `Failed to load balance for ${assetId}: ` + err.message });
+      setUserBalance(new Decimal(0));
+    } finally {
+      setIsLoadingBalance(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchUserBalanceForAsset(selectedAssetId);
+  }, [selectedAssetId, fetchUserBalanceForAsset]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -61,21 +77,23 @@ export function NearWithdrawalRequest() {
          throw new Error('Please enter a valid positive amount.');
       }
       if (!userBalance || amountDecimal.gt(userBalance)) { // Check against null userBalance as well
-         throw new Error('Withdrawal amount exceeds your available balance.');
+         throw new Error(`Withdrawal amount exceeds your available ${selectedAssetId} balance.`);
       }
 
       const result = await fetcher('/api/near/withdrawals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetNearAccountId, amount: amountDecimal.toString() }),
+        body: JSON.stringify({
+            targetNearAccountId,
+            amount: amountDecimal.toString(),
+            assetPlatformId: selectedAssetId // Include selected asset
+        }),
       });
 
       setMessage({ type: 'success', text: result.message || 'Withdrawal request submitted successfully!' });
       setTargetNearAccountId('');
       setAmount('');
-      // Optionally, refresh user balance after successful withdrawal request
-      getUserPrimaryBalance().then(setUserBalance).catch(console.error);
-
+      fetchUserBalanceForAsset(selectedAssetId); // Refresh balance for the current asset
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Failed to submit withdrawal request.' });
     } finally {
@@ -85,22 +103,32 @@ export function NearWithdrawalRequest() {
 
   const handleMaxAmount = () => {
      if (userBalance) {
-         // Deduct a small amount for potential transaction fees if those were client-side calculated (not the case here)
-         // Or simply set to full balance.
          setAmount(userBalance.toString());
      }
-  }
+  };
+  const selectedAssetName = supportedWithdrawalAssets.find(a => a.id === selectedAssetId)?.name || selectedAssetId;
 
   return (
     <div className="space-y-4 p-4 border rounded-lg">
-      <h3 className="text-lg font-semibold">Request NEAR Withdrawal</h3>
+      <h3 className="text-lg font-semibold">Request Withdrawal</h3>
+
+      <AssetSelector
+        assets={supportedWithdrawalAssets}
+        selectedAssetId={selectedAssetId}
+        onSelectAsset={(assetId) => {
+            setSelectedAssetId(assetId);
+            setAmount(''); // Clear amount when asset changes
+            setMessage(null);
+        }}
+        disabled={isSubmitting || isLoadingBalance}
+      />
 
       {isLoadingBalance ? (
-        <p>Loading your balance...</p>
+        <p>Loading your {selectedAssetName} balance...</p>
       ) : userBalance !== null && (
         <p className="text-sm">
-          Your available PRIMARY balance: <strong className="font-mono">{userBalance.toDP(2).toString()}</strong>
-          {/* TODO: Display currency code if dynamic */}
+          Your available {selectedAssetName} balance: <strong className="font-mono">{userBalance.toDP(selectedAssetId === PLATFORM_USDC_ASSET_ID ? 2 : 4).toString()}</strong>
+          {/* Adjust decimal places based on asset */}
         </p>
       )}
 
@@ -125,7 +153,7 @@ export function NearWithdrawalRequest() {
         </div>
         <div>
          <div className="flex justify-between items-center">
-             <Label htmlFor="amount">Amount to Withdraw (PRIMARY)</Label>
+             <Label htmlFor="amount">Amount to Withdraw ({selectedAssetName})</Label>
              {userBalance && !userBalance.isZero() && (
                  <Button type="button" /*variant="link" size="sm"*/ onClick={handleMaxAmount} disabled={isSubmitting} className="p-0 h-auto text-xs" style={{border: 'none', background: 'none', textDecoration: 'underline', cursor: 'pointer'}}>
                      Max
@@ -134,7 +162,7 @@ export function NearWithdrawalRequest() {
          </div>
           <Input
             id="amount"
-            type="text" // Using text for decimal handling, though "number" with step="any" can also work
+            type="text" // Using text for decimal handling
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="e.g., 100.00"
@@ -143,7 +171,7 @@ export function NearWithdrawalRequest() {
           />
         </div>
         <Button type="submit" disabled={isSubmitting || isLoadingBalance || userBalance === null || userBalance.isZero()}>
-          {isSubmitting ? 'Submitting...' : 'Request Withdrawal'}
+          {isSubmitting ? 'Submitting...' : `Request ${selectedAssetName} Withdrawal`}
         </Button>
       </form>
     </div>

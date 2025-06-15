@@ -36,10 +36,11 @@ export async function GET(req: NextRequest) {
       id: d.id,
       type: 'deposit' as const,
       status: 'COMPLETED' as const, // Deposits are generally considered completed once recorded by monitor
-      amount: new Decimal(d.amountYoctoNear).div('1e24').toString(), // Convert to NEAR string
-      currency: 'NEAR',
+      amount: new Decimal(d.amountRawUnits).div(new Decimal('1e' + d.assetDecimals)).toString(), // Use assetDecimals
+      currency: d.assetPlatformId, // Use assetPlatformId as currency code
       nearAccountId: d.nearAccountId, // Sender
       nearTransactionHash: d.nearTransactionHash,
+      memo: d.memo, // Include memo if it exists on the model
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
     }));
@@ -48,8 +49,8 @@ export async function GET(req: NextRequest) {
       id: w.id,
       type: 'withdrawal' as const,
       status: w.status,
-      amount: new Decimal(w.amountYoctoNear).div('1e24').toString(), // Convert to NEAR string
-      currency: 'NEAR',
+      amount: new Decimal(w.amountRawUnits).div(new Decimal('1e' + w.assetDecimals)).toString(), // Use assetDecimals
+      currency: w.assetPlatformId, // Use assetPlatformId as currency code
       nearAccountId: w.targetNearAccountId, // Recipient
       nearTransactionHash: w.nearTransactionHash,
       createdAt: w.createdAt,
@@ -58,6 +59,10 @@ export async function GET(req: NextRequest) {
     }));
 
     // Combine, sort, and then apply pagination
+    // TODO: For users with extremely large transaction volumes,
+    // this in-memory sort and slice can be memory intensive.
+    // A more scalable solution would involve a raw SQL query with
+    // DB-level UNION ALL, ORDER BY, LIMIT, and OFFSET.
     const combinedTransactions = [...formattedDeposits, ...formattedWithdrawals]
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(offset, offset + limit);
