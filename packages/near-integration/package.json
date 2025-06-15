@@ -1,0 +1,18 @@
+{
+  "name": "@play-money/near-integration",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "scripts": {
+    "test": "jest",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "near-api-js": "^2.1.4"
+  },
+  "devDependencies": {
+    "@play-money/config": "*",
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "extends": "@play-money/config/typescript/react-library.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "."
+  },
+  "include": ["."],
+  "exclude": ["dist", "build", "node_modules"]
+}

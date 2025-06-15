@@ -52,6 +52,8 @@ model User {
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
+  nearAccountId String? @unique
+
   email         String    @unique /// @zod.custom.omit([model, input])
   emailVerified DateTime? /// @zod.custom.omit([model, input])
 
@@ -62,6 +64,8 @@ model User {
 
   createdLists List[]   @relation("ListCreator")
   apiKeys      ApiKey[]
+  nearDeposits NearDeposit[]
+  nearWithdrawals NearWithdrawal[] // New relation
 }
 
 model AuthAccount {
@@ -239,6 +243,8 @@ enum TransactionType {
 
   REFERRER_BONUS
   REFERREE_BONUS
+  PLATFORM_DEPOSIT // New type for generic platform deposits
+  PLATFORM_WITHDRAWAL // New type
 }
 
 model Transaction {
@@ -256,6 +262,7 @@ model Transaction {
   marketId    String?
   market      Market?            @relation(fields: [marketId], references: [id])
   options     MarketOption[]
+  nearWithdrawal NearWithdrawal? // New relation
 
   // Unnecessary reverse relations
   notifications Notification[] @relation()
@@ -469,4 +476,58 @@ model ApiKey {
 
   @@index([key])
   @@index([userId])
+}
+
+model NearDeposit {
+  id                  String   @id @default(cuid())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  nearTransactionHash String   @unique // The hash of the Near transaction
+  nearAccountId       String   // The sender's Near account ID
+  amountYoctoNear     String   // Amount deposited, in yoctoNEAR
+  platformUserId      String   // ID of the platform user credited
+  platformUser        User     @relation(fields: [platformUserId], references: [id])
+  processedAt         DateTime @default(now())
+
+  @@index([platformUserId])
+  @@index([nearAccountId])
+}
+
+model BlockchainSyncState {
+  id                  String   @id @default(cuid())
+  monitorId           String   @unique // e.g., "near-deposit-monitor"
+  lastProcessedBlock  BigInt
+  updatedAt           DateTime @updatedAt
+}
+
+enum WithdrawalStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REQUIRES_MANUAL_INTERVENTION
+}
+
+model NearWithdrawal {
+  id                       String    @id @default(cuid())
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  platformUserId           String
+  platformUser             User      @relation(fields: [platformUserId], references: [id])
+  platformTransactionId    String    @unique // ID of the internal debit transaction
+  platformTransaction      Transaction @relation(fields: [platformTransactionId], references: [id])
+
+  targetNearAccountId      String    // User's personal Near account to send funds to
+  amountYoctoNear          String    // Amount to send, in yoctoNEAR (derived from platform currency amount)
+
+  status                   WithdrawalStatus @default(PENDING)
+  nearTransactionHash      String?   @unique // Hash of the Near blockchain transaction
+  failureReason            String?   // If status is FAILED
+
+  processingAttempts       Int       @default(0)
+  lastAttemptAt            DateTime?
+
+  @@index([platformUserId])
+  @@index([status])
 }
